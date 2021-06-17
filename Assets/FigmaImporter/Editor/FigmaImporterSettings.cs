@@ -8,8 +8,12 @@ namespace FigmaImporter.Editor
         [SerializeField] private string clientCode = null;
         [SerializeField] private string state = null;
         [SerializeField] private string token = null;
-        [SerializeField] private string url = null;
-        [SerializeField] private string rendersPath = "FigmaImporter/Renders";
+        [SerializeField] private string rendersPath = "Images";
+        [SerializeField] private string elementName = null;
+        [SerializeField] private string elementURL = null;
+        [SerializeField] private string uiKitName = "UIKit";
+        [SerializeField] private string uiKitFrameURL = null;
+        [SerializeField] private bool isUIKit = false;
         
         public string ClientCode
         {
@@ -29,16 +33,44 @@ namespace FigmaImporter.Editor
             set => token = value;
         }
 
-        public string Url
+        public string Url => isUIKit ? uiKitFrameURL : elementURL;
+        
+        public string FrameName => isUIKit ? uiKitName : elementName;
+        
+        public string UIKitFrameURL
         {
-            get => url;
-            set => url = value;
+            get => uiKitFrameURL;
+            set => uiKitFrameURL = value;
+        }
+        
+        public string ElementURL
+        {
+            get => elementURL;
+            set => elementURL = value;
         }
 
         public string RendersPath
         {
             get => rendersPath;
             set => rendersPath = value;
+        }
+        
+        public string ElementName
+        {
+            get => elementName;
+            set => elementName = value;
+        }
+        
+        public string UIKitName
+        {
+            get => uiKitName;
+            set => uiKitName = value;
+        }
+        
+        public bool IsUIKit
+        {
+            get => isUIKit;
+            set => isUIKit = value;
         }
 
         public static FigmaImporterSettings GetInstance()

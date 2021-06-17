@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using JetBrains.Annotations;
 using UnityEngine;
 
 namespace FigmaImporter.Editor
@@ -40,12 +41,29 @@ namespace FigmaImporter.Editor
                 }
             }
 
+            AssignParents(result, null);
+            
             return result;
         }
 
         private Node ParseSingleNode(string s)
         {
             return JsonUtility.FromJson<Node>(FixBraces(s));
+        }
+
+        private void AssignParents(List<Node> nodes, [CanBeNull] Node parent)
+        {
+            foreach (var node in nodes)
+            {
+                if (parent != null)
+                {
+                    node.parent = new WeakReference<Node>(parent);
+                }
+                if (node.children.Count > 0)
+                {
+                    AssignParents(node.children, node);
+                }
+            }
         }
 
         private string FixBraces(string s)

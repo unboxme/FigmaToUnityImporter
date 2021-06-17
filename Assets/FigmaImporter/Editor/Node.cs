@@ -1,4 +1,7 @@
 ﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using JetBrains.Annotations;
 using UnityEngine;
 
 namespace FigmaImporter.Editor
@@ -7,10 +10,11 @@ namespace FigmaImporter.Editor
     public class Node
     {
         public string id;
+        [CanBeNull] public WeakReference<Node> parent;
         public string name;
         public string type;
         public string blendMode;
-        public Node[] children;
+        public List<Node> children;
         public AbsoluteBoundingBox absoluteBoundingBox; // done
         public Constraints constraints; // done
         public bool clipsContent;
@@ -27,6 +31,51 @@ namespace FigmaImporter.Editor
         public string transitionNodeID;
         public float transitionDuration;
         public string transitionEasing;
+        public string componentId;
+
+        public string NamePathByPropertyIfNeeded()
+        {
+            var nameParts = name.Split(',').Select((str) => str.Trim());
+            var namePropertyPair = nameParts.FirstOrDefault((str) => str.Contains("name="));
+
+            var fileName = name;
+            if (namePropertyPair != null)
+                fileName = namePropertyPair.Split('=').Last();
+            
+            // Single-variant component handling
+            if (fileName.Contains('/'))
+            {
+                // Expects path-like name: `Icons/Settings`, etc.
+                fileName = name.Split('/').Last();
+                fileName = fileName.Substring(0, 1).ToLower() + fileName.Substring(1);
+            }
+
+            return fileName + ".png";
+        }
+        
+        public string RelativeSavePath()
+        {
+            var relativePath = "";
+            if (parent != null && parent.TryGetTarget(out var weakParent))
+            {
+                if (weakParent.type == "COMPONENT_SET")
+                {
+                    // Expects path-like name: `Buttons/Wide`, etc.
+                    relativePath = weakParent.name;
+                }
+                // Single-variant component handling
+                else if (type == "COMPONENT")
+                {
+                    // Expects path-like name: `Icons/Settings`, etc.
+                    var components = name.Split('/').ToList();
+                    components.RemoveAt(components.Count - 1);
+
+                    relativePath = string.Join("/", components);
+                }
+            }
+
+            return relativePath + "/";
+        }
     }
 
     [Serializable]

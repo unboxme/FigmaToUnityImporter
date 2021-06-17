@@ -13,5 +13,10 @@ MonoBehaviour:
   m_Name: Font Links
   m_EditorClassIdentifier: 
   _fonts:
-  - Name: LieberationSans
-    Font: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
+  - StyleName: Default
+    Material: {fileID: 6238346408144293168, guid: 16828b015482b514aaed19ba97e3cbf3,
+      type: 2}
+    Font: {fileID: 11400000, guid: 16828b015482b514aaed19ba97e3cbf3, type: 2}
+  - StyleName: Green
+    Material: {fileID: 2100000, guid: 6029ed2dc7a34c840901a9c640d6851a, type: 2}
+    Font: {fileID: 11400000, guid: 16828b015482b514aaed19ba97e3cbf3, type: 2}

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using UnityEditor;
 using UnityEngine;
@@ -18,34 +19,60 @@ namespace FigmaImporter.Editor
         }
 
         private static FigmaImporterSettings _settings = null;
+        public FigmaImporterSettings Settings => _settings;
 
         void OnGUI()
         {
             if (_settings == null)
                 _settings = FigmaImporterSettings.GetInstance();
 
-            if (GUILayout.Button("OpenOauthUrl"))
+            if (GUILayout.Button("Auth"))
             {
                 OpenOauthUrl();
             }
-
-
-            _settings.ClientCode = EditorGUILayout.TextField("ClientCode", _settings.ClientCode);
+            
+            _settings.ClientCode = EditorGUILayout.TextField("Client Code", _settings.ClientCode);
             _settings.State = EditorGUILayout.TextField("State", _settings.State);
             EditorUtility.SetDirty(_settings);
-            if (GUILayout.Button("GetToken"))
+            if (GUILayout.Button("Generate Token"))
             {
                 _settings.Token = GetOAuthToken();
             }
 
-            GUILayout.TextArea("Token:" + _settings.Token);
-            _settings.Url = EditorGUILayout.TextField("Url", _settings.Url);
-            _settings.RendersPath = EditorGUILayout.TextField("RendersPath", _settings.RendersPath);
-            if (GUILayout.Button("GetFile"))
+            GUILayout.TextArea("Token: " + _settings.Token);
+
+            GUIHorizontalLine();
+            _settings.RendersPath = EditorGUILayout.TextField("Root Folder", _settings.RendersPath);
+            
+            GUIHorizontalLine();
+            _settings.UIKitName = EditorGUILayout.TextField("UIKit Name", _settings.UIKitName);
+            _settings.UIKitFrameURL = EditorGUILayout.TextField("UIKit Frame URL", _settings.UIKitFrameURL);
+            if (GUILayout.Button("Parse UIKit"))
             {
-                string apiUrl = ConvertToApiUrl(_settings.Url);
-                GetFile(apiUrl);
+                _settings.IsUIKit = true;
+                GetFile(ConvertToApiUrl(_settings.Url));
             }
+            
+            GUIHorizontalLine();
+            _settings.ElementName = EditorGUILayout.TextField("Element Name", _settings.ElementName);
+            _settings.ElementURL = EditorGUILayout.TextField("Element URL", _settings.ElementURL);
+            if (GUILayout.Button("Parse Element"))
+            {
+                _settings.IsUIKit = false;
+                GetFile(ConvertToApiUrl(_settings.Url));
+            }
+        }
+        
+        static void GUIHorizontalLine() {
+            GUIStyle horizontalLine = new GUIStyle();
+            horizontalLine.normal.background = EditorGUIUtility.whiteTexture;
+            horizontalLine.margin = new RectOffset( 0, 0, 4, 4 );
+            horizontalLine.fixedHeight = 1;
+            
+            var c = GUI.color;
+            GUI.color = UnityEngine.Color.gray;
+            GUILayout.Box(GUIContent.none, horizontalLine);
+            GUI.color = c;
         }
 
         private static string _fileName;
@@ -138,7 +165,7 @@ namespace FigmaImporter.Editor
                 else
                 {
                     var result = www.downloadHandler.text;
-                    FigmaParser parser = new FigmaParser();
+                    var parser = new FigmaParser();
                     var nodes = parser.ParseResult(result);
                     FigmaNodesProgressInfo.NodesCount = GetNodesCount(nodes);
                     FigmaNodeGenerator generator = new FigmaNodeGenerator(this);
@@ -203,9 +230,10 @@ namespace FigmaImporter.Editor
             return null;
         }
 
-        public string GetRendersFolderPath()
+        public string GetRendersFolderPath(string relativePath, bool forUIKit = false)
         {
-            return _settings.RendersPath;
+            var pathPart = _settings.IsUIKit || forUIKit ? _settings.UIKitName : _settings.ElementName;
+            return $"{_settings.RendersPath}/{pathPart}/{relativePath}";
         }
 
         private async Task<Texture2D> LoadTextureByUrl(string url)

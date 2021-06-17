@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
 using TMPro;
@@ -13,21 +14,27 @@ namespace FigmaImporter.Editor
         Vector2 offset = Vector2.zero;
         private RectTransform root = null;
         private readonly FigmaImporter _importer;
+        private readonly ComponentMetadataGenerator _metadataGenerator;
 
         public FigmaNodeGenerator(FigmaImporter importer)
         {
             _importer = importer;
+
+            var uiKitPath = $"{Application.dataPath}/{_importer.Settings.RendersPath}/{_importer.Settings.UIKitName}";
+            _metadataGenerator = new ComponentMetadataGenerator(uiKitPath);
+            if (_importer.Settings.IsUIKit)
+                _metadataGenerator.RemoveMetadata();
         }
 
         public async Task GenerateNode(Node node, GameObject parent = null)
         {
+            if (node.name.Contains("[-]"))
+                return;
+            
             FigmaNodesProgressInfo.CurrentNode ++;
             FigmaNodesProgressInfo.CurrentInfo = "Node generation in progress";
             FigmaNodesProgressInfo.ShowProgress(0f);
-            
-            //RendersFolderの有無の確認
-            GenerateRenderSaveFolder(_importer.GetRendersFolderPath());
-            
+
             var boundingBox = node.absoluteBoundingBox;
             bool isParentCanvas = false;
             if (parent == null)
@@ -36,20 +43,48 @@ namespace FigmaImporter.Editor
                 offset = boundingBox.GetPosition();
                 isParentCanvas = true;
             }
-            
+
+            var nodeGoName = node.name;
             GameObject nodeGo = new GameObject();
+
             RectTransform parentT = parent.GetComponent<RectTransform>();
             if (isParentCanvas)
+            {
                 root = parentT;
-            nodeGo.name = node.name;
+                nodeGoName = _importer.Settings.FrameName;
+            }
+            else 
+            {
+                nodeGoName = node.name;
+            }
+
+            if (!_importer.Settings.IsUIKit)
+            {
+                var abbreviations = new Dictionary<string, string>
+                {
+                    { "Buttons/", "B : " }, 
+                    { "Icons/", "I : " },
+                    { "Text/", "T : " }
+                };
+                foreach (var pair in abbreviations)
+                {
+                    if (nodeGoName.Contains(pair.Key))
+                        nodeGoName = nodeGoName.Replace(pair.Key, pair.Value);
+                }
+            }
+
+            nodeGo.name = nodeGoName;
+            
             var rectTransform = nodeGo.AddComponent<RectTransform>();
             SetPosition(parentT, rectTransform, boundingBox);
-            if (node.name == "bbbbbbbbbb")
-                Debug.Log("oopsie");
+            
             if (!isParentCanvas)
                 SetConstraints(parentT, rectTransform, node.constraints);
             SetMask(node, nodeGo);
-            if (node.type != "TEXT" && (node.children == null || node.children.Length == 0))
+            
+            var isInstanceOrComponentNode = node.type == "INSTANCE" || node.type == "COMPONENT";
+            var isNonTextNode = node.type != "TEXT" && (node.children == null || node.children.Count == 0);
+            if (isInstanceOrComponentNode || isNonTextNode)
             {
                 await RenderNodeAndApply(node, nodeGo);
             }
@@ -80,18 +115,16 @@ namespace FigmaImporter.Editor
                 var fontLinksId = AssetDatabase.FindAssets("t:FontLinks")[0];
                 FontLinks fl = AssetDatabase.LoadAssetAtPath<FontLinks>(AssetDatabase.GUIDToAssetPath(fontLinksId));
 
-                var fontName = string.IsNullOrEmpty(style.fontPostScriptName)
-                    ? style.fontFamily
-                    : style.fontPostScriptName;
-                var font = fl.Get(fontName);
-                if (font == null)
-                {
-                    Debug.LogError(
-                        $"[FigmaImporter] Couldn't find font named {fontName}, please link it in FontLinks.asset");
-                    fl.AddName(fontName);
+                var styleName = "Default";
+                var styleNameParts = node.name.Split('[', ']');
+                if (styleNameParts.Length > 2)
+                    styleName = styleNameParts[1];
+                
+                if (!string.IsNullOrEmpty(styleName)) {
+                    var fontLink = fl.Get(styleName);
+                    tmp.font = fontLink.Font;
+                    tmp.fontSharedMaterial = fontLink.Material;
                 }
-                else
-                    tmp.font = font;
 
                 var verticalAlignment = style.textAlignVertical;
                 var horizontalAlignment = style.textAlignHorizontal;
@@ -121,9 +154,30 @@ namespace FigmaImporter.Editor
         {
             FigmaNodesProgressInfo.CurrentInfo = "Loading image";
             FigmaNodesProgressInfo.ShowProgress(0f);
-            var result = await _importer.GetImage(node.id);
+
+            Texture2D result = null;
+            string relativePath = null;
+            string fileName = null;
+            
+            var componentMetadata = _metadataGenerator.FindComponentMetadata(node.componentId);
+            if (componentMetadata == null)
+            {
+                result = await _importer.GetImage(node.id);
+                relativePath = node.RelativeSavePath();
+                fileName = node.NamePathByPropertyIfNeeded();
+            }
+            else
+            {
+                var relativePathForSavedImage = componentMetadata.path + componentMetadata.fileName;
+                var filePath = $"{Application.dataPath}/{_importer.Settings.RendersPath}/{_importer.Settings.UIKitName}/{relativePathForSavedImage}";
+                var imageData = File.ReadAllBytes(filePath);
+                result = new Texture2D(0,0);
+                result.LoadImage(imageData);
+                relativePath = componentMetadata.path;
+                fileName = componentMetadata.fileName;
+            }
+            
             var t = nodeGo.transform as RectTransform;
-            string spriteName = $"{node.name}_{node.id.Replace(':', '_')}.png";
             
             Image image = null;
             Sprite sprite = null;
@@ -131,8 +185,16 @@ namespace FigmaImporter.Editor
             FigmaNodesProgressInfo.ShowProgress(0f);
             try
             {
-                SaveTexture(result, $"/{_importer.GetRendersFolderPath()}/{spriteName}");
-                sprite = ChangeTextureToSprite($"Assets/{_importer.GetRendersFolderPath()}/{spriteName}");
+                if (componentMetadata == null)
+                {
+                    SaveTexture(result, _importer.GetRendersFolderPath(relativePath), fileName);
+                }
+                
+                if (_importer.Settings.IsUIKit)
+                    _metadataGenerator.GenerateMetadataIfNeeded(node);
+
+                var forUIKit = componentMetadata != null;
+                sprite = ChangeTextureToSprite(_importer.GetRendersFolderPath(relativePath, forUIKit), fileName);
                 if (Math.Abs(t.rect.width - sprite.texture.width) < 1f &&
                     Math.Abs(t.rect.height - sprite.texture.height) < 1f)
                 {
@@ -185,9 +247,10 @@ namespace FigmaImporter.Editor
                         break;
                     default:
                         var tex = gg.GetTexture(fill, node.absoluteBoundingBox.GetSize(), 256);
-                        string fileName = $"{node.name}_{index.ToString()}.png";
-                        SaveTexture(tex, $"/{_importer.GetRendersFolderPath()}/{fileName}");
-                        var sprite = ChangeTextureToSprite($"Assets/{_importer.GetRendersFolderPath()}/{fileName}");
+                        var relativePath = node.RelativeSavePath();
+                        var fileName = node.NamePathByPropertyIfNeeded();
+                        SaveTexture(tex, _importer.GetRendersFolderPath(relativePath), fileName);
+                        var sprite = ChangeTextureToSprite(_importer.GetRendersFolderPath(relativePath), fileName);
                         image.sprite = sprite;
                         break;
                 }
@@ -210,23 +273,27 @@ namespace FigmaImporter.Editor
             return go;
         }
 
-        private Sprite ChangeTextureToSprite(string path)
+        private Sprite ChangeTextureToSprite(string path, string fileName)
         {
-            TextureImporter textureImporter = AssetImporter.GetAtPath(path) as TextureImporter;
+            var fullPath = "Assets/" + path + fileName;
+            TextureImporter textureImporter = AssetImporter.GetAtPath(fullPath) as TextureImporter;
             textureImporter.textureType = TextureImporterType.Sprite;
             AssetDatabase.SaveAssets();
-            AssetDatabase.ImportAsset(path);
-            return AssetDatabase.LoadAssetAtPath<Sprite>(path);
+            AssetDatabase.ImportAsset(fullPath);
+            return AssetDatabase.LoadAssetAtPath<Sprite>(fullPath);
         }
 
-        private void SaveTexture(Texture2D texture, string path)
+        private void SaveTexture(Texture2D texture, string path, string fileName)
         {
             byte[] bytes = texture.EncodeToPNG();
             if (bytes != null)
             {
-                var filePath = Application.dataPath + path;
-                System.IO.File.WriteAllBytes(filePath, bytes);
-                UnityEditor.AssetDatabase.Refresh();
+                var fileFoldPath = $"{Application.dataPath}/{path}";
+                var filePath = fileFoldPath + fileName;
+                if (!Directory.Exists(fileFoldPath))
+                    Directory.CreateDirectory(fileFoldPath);
+                File.WriteAllBytes(filePath, bytes);
+                AssetDatabase.Refresh();
             }
         }
 
@@ -333,7 +400,7 @@ namespace FigmaImporter.Editor
 
         public GameObject GenerateCanvas()
         {
-            GameObject canvasGO = new GameObject("Canvas");
+            GameObject canvasGO = new GameObject("FigmaCanvas");
             var transform = canvasGO.AddComponent<RectTransform>();
             var canvas = canvasGO.AddComponent<Canvas>();
             var canvasScaler = canvasGO.AddComponent<CanvasScaler>();
@@ -345,16 +412,6 @@ namespace FigmaImporter.Editor
         {
             var obj = GameObject.FindObjectOfType<Canvas>();
             return obj != null ? obj.gameObject : GenerateCanvas();
-        }
-
-        private static void GenerateRenderSaveFolder(string path)
-        {
-            var fullPath = Path.Combine(Application.dataPath, path);
-            if (Directory.Exists(fullPath))
-            {
-                return;
-            }
-            Directory.CreateDirectory(fullPath);
         }
     }
 }
